@@ -1,10 +1,21 @@
 name: Build Android APK
 
+# 推送到 master 即自动打包（也可在 Actions 页面手动运行），APK 发布到 Releases：v{package.json 版本}
 on:
+  push:
+    branches: [master]
+    paths-ignore:
+      - "**.md"
+      - "screenshot/**"
+      - "docs/**"
   workflow_dispatch:
 
 permissions:
   contents: write
+
+concurrency:
+  group: build-apk
+  cancel-in-progress: true
 
 jobs:
   direct_build:
@@ -12,10 +23,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Check out repository
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       - name: Set up Node.js
-        uses: actions/setup-node@v3
+        uses: actions/setup-node@v4
         with:
           node-version: 18
           cache: "yarn"
@@ -28,30 +39,38 @@ jobs:
         run: echo "version=$(node -p "require('./package.json').version")" >> $GITHUB_OUTPUT
 
       - name: Setup JDK
-        uses: actions/setup-java@v3
+        uses: actions/setup-java@v4
         with:
           distribution: "zulu"
           java-version: "17"
 
-      - name: Prebuild TV App
-        run: yarn prebuild
-
+      # 签名：沿用 Expo 模板自带的固定 debug.keystore，每次打包签名一致，新版本可直接覆盖安装
       - name: Build TV APK
         run: yarn build
 
       - name: Rename APK file
         run: |
           mkdir -p artifacts
-          cp android/app/build/outputs/apk/release/app-release.apk artifacts/orionTV.${{ steps.package-version.outputs.version }}.apk
+          cp android/app/build/outputs/apk/release/app-release.apk artifacts/MoonTV.${{ steps.package-version.outputs.version }}.apk
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: MoonTV-${{ steps.package-version.outputs.version }}
+          path: artifacts/*.apk
 
       - name: Create Release and Upload APK
         uses: softprops/action-gh-release@v2
         with:
           tag_name: v${{ steps.package-version.outputs.version }}
-          name: Release v${{ steps.package-version.outputs.version }}
-          body: Automated release for version v${{ steps.package-version.outputs.version }}.
+          name: MoonTV v${{ steps.package-version.outputs.version }}
+          body: |
+            MoonTV 电视端（Apple TV 风格界面），基于 OrionTV。
+            本次构建：${{ github.sha }}
+            安装：下载 MoonTV.${{ steps.package-version.outputs.version }}.apk 拷到电视或用电视浏览器下载后安装。
           draft: false
           prerelease: false
-          files: artifacts/orionTV.${{ steps.package-version.outputs.version }}.apk
+          overwrite_files: true
+          files: artifacts/MoonTV.${{ steps.package-version.outputs.version }}.apk
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

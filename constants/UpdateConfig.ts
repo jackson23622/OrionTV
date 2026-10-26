@@ -7,11 +7,11 @@ export const UPDATE_CONFIG = {
 
   // GitHub相关URL
   GITHUB_RAW_URL:
-    `https://ghfast.top/https://raw.githubusercontent.com/orion-lib/OrionTV/refs/heads/master/package.json?t=${Date.now()}`,
+    `https://ghfast.top/https://raw.githubusercontent.com/jackson23622/OrionTV/refs/heads/master/package.json?t=${Date.now()}`,
 
   // 获取平台特定的下载URL
   getDownloadUrl(version: string): string {
-    return `https://ghfast.top/https://github.com/orion-lib/OrionTV/releases/download/v${version}/orionTV.${version}.apk`;
+    return `https://ghfast.top/https://github.com/jackson23622/OrionTV/releases/download/v${version}/MoonTV.${version}.apk`;
   },
 
   // 是否显示更新日志
@@ -29,7 +29,7 @@ export const UPDATE_CONFIG = {
   // 更新通知设置
   NOTIFICATION: {
     ENABLED: true,
-    TITLE: "OrionTV 更新",
+    TITLE: "MoonTV 更新",
     DOWNLOADING_TEXT: "正在下载新版本...",
     DOWNLOAD_COMPLETE_TEXT: "下载完成，点击安装",
   },

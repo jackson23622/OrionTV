@@ -14,121 +14,60 @@ interface StyledButtonProps extends PressableProps {
   textStyle?: StyleProp<TextStyle>;
 }
 
+/**
+ * Apple TV 风格按钮：
+ *  - 文字按钮获得焦点时变为白底黑字并放大（tvOS 焦点效果）
+ *  - 图标 / 自定义内容按钮获得焦点时为半透明白色底板，保证白色图标仍可见
+ *  - 选中（非焦点）为浅灰底
+ */
 export const StyledButton = forwardRef<View, StyledButtonProps>(
   ({ children, text, variant = "default", isSelected = false, style, textStyle, ...rest }, ref) => {
-    const colorScheme = "dark";
-    const colors = Colors[colorScheme];
+    const colors = Colors.dark;
     const [isFocused, setIsFocused] = React.useState(false);
-    const animationStyle = useButtonAnimation(isFocused);
+    const animationStyle = useButtonAnimation(isFocused, 1.08);
     const deviceType = useResponsiveLayout().deviceType;
+    const { onFocus, onBlur, ...pressableProps } = rest;
 
-    const variantStyles = {
-      default: StyleSheet.create({
-        button: {
-          backgroundColor: colors.border,
-        },
-        text: {
-          color: colors.text,
-        },
-        selectedButton: {
-          backgroundColor: colors.primary,
-        },
-        focusedButton: {
-          borderColor: colors.primary,
-        },
-        selectedText: {
-          color: Colors.dark.text,
-        },
-      }),
-      primary: StyleSheet.create({
-        button: {
-          backgroundColor: "transparent",
-        },
-        text: {
-          color: colors.text,
-        },
-        focusedButton: {
-          backgroundColor: colors.primary,
-          borderColor: colors.background,
-        },
-        selectedButton: {
-          backgroundColor: colors.primary,
-        },
-        selectedText: {
-          color: colors.link,
-        },
-      }),
-      ghost: StyleSheet.create({
-        button: {
-          backgroundColor: "transparent",
-        },
-        text: {
-          color: colors.text,
-        },
-        focusedButton: {
-          backgroundColor: "rgba(119, 119, 119, 0.2)",
-          borderColor: colors.primary,
-        },
-        selectedButton: {},
-        selectedText: {},
-      }),
-    };
+    const isTextButton = !!text;
 
-    const styles = StyleSheet.create({
-      button: {
-        paddingHorizontal: 16,
-        paddingVertical: 10,
-        borderRadius: 8,
-        borderWidth: 2,
-        borderColor: "transparent",
-        flexDirection: "row",
-        alignItems: "center",
-        justifyContent: "center",
-      },
-      focusedButton: {
-        backgroundColor: colors.link,
-        borderColor: colors.background,
-        elevation: 5,
-        shadowColor: colors.link,
-        shadowOffset: { width: 0, height: 0 },
-        shadowOpacity: 1,
-        shadowRadius: 15,
-      },
-      selectedButton: {
-        backgroundColor: colors.tint,
-      },
-      text: {
-        fontSize: 16,
-        fontWeight: "500",
-        color: colors.text,
-      },
-      selectedText: {
-        color: Colors.dark.text,
-      },
-    });
+    // primary 与 default 外观一致（部分调用方用白色文字作为子元素，不能用白底）
+    const baseBackground = variant === "ghost" ? "transparent" : colors.fill;
+    const baseTextColor = colors.text;
+
+    const focusedBackground = isTextButton ? colors.focus : "rgba(255,255,255,0.28)";
+    const focusedTextColor = isTextButton ? colors.onFocus : colors.text;
+
+    const selectedBackground = "rgba(255,255,255,0.22)";
 
     return (
       <Animated.View style={[animationStyle, style]}>
         <Pressable
-          android_ripple={Platform.isTV || deviceType !== 'tv'? { color: 'transparent' } : { color: Colors.dark.link }}
+          android_ripple={Platform.isTV || deviceType !== "tv" ? { color: "transparent" } : { color: colors.link }}
           ref={ref}
-          onFocus={() => setIsFocused(true)}
-          onBlur={() => setIsFocused(false)}
+          onFocus={(e) => {
+            setIsFocused(true);
+            onFocus?.(e);
+          }}
+          onBlur={(e) => {
+            setIsFocused(false);
+            onBlur?.(e);
+          }}
           style={({ focused }) => [
             styles.button,
-            variantStyles[variant].button,
-            isSelected && (variantStyles[variant].selectedButton ?? styles.selectedButton),
-            focused && (variantStyles[variant].focusedButton ?? styles.focusedButton),
+            { backgroundColor: baseBackground },
+            isSelected && { backgroundColor: selectedBackground },
+            focused && [styles.focused, { backgroundColor: focusedBackground }],
           ]}
-          {...rest}
+          {...pressableProps}
         >
           {text ? (
             <ThemedText
               style={[
                 styles.text,
-                variantStyles[variant].text,
-                isSelected && (variantStyles[variant].selectedText ?? styles.selectedText),
+                { color: baseTextColor },
+                isSelected && styles.selectedText,
                 textStyle,
+                isFocused && { color: focusedTextColor },
               ]}
             >
               {text}
@@ -143,3 +82,28 @@ export const StyledButton = forwardRef<View, StyledButtonProps>(
 );
 
 StyledButton.displayName = "StyledButton";
+
+const styles = StyleSheet.create({
+  button: {
+    paddingHorizontal: 18,
+    paddingVertical: 10,
+    borderRadius: 12,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  focused: {
+    elevation: 8,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.45,
+    shadowRadius: 16,
+  },
+  text: {
+    fontSize: 16,
+    fontWeight: "600",
+  },
+  selectedText: {
+    fontWeight: "700",
+  },
+});

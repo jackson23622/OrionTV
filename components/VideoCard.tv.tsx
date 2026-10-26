@@ -4,7 +4,6 @@ import { useRouter } from "expo-router";
 import { Star, Play } from "lucide-react-native";
 import { PlayRecordManager } from "@/services/storage";
 import { API } from "@/services/api";
-import { ThemedText } from "@/components/ThemedText";
 import { Colors } from "@/constants/Colors";
 import Logger from '@/utils/Logger';
 import { useResponsiveLayout } from "@/hooks/useResponsiveLayout";
@@ -83,9 +82,9 @@ const VideoCard = forwardRef<View, VideoCardProps>(
     const handleFocus = useCallback(() => {
       setIsFocused(true);
       Animated.spring(scale, {
-        toValue: 1.05,
-        damping: 15,
-        stiffness: 200,
+        toValue: 1.1,
+        damping: 16,
+        stiffness: 220,
         useNativeDriver: true,
       }).start();
       onFocus?.();
@@ -165,52 +164,47 @@ const VideoCard = forwardRef<View, VideoCardProps>(
           // activeOpacity={1}
           delayLongPress={1000}
         >
-          <View style={styles.card}>
+          <View style={[styles.card, isFocused && styles.cardFocused]}>
             <Image source={{ uri: api.getImageProxyUrl(poster) }} style={styles.poster} />
-            {isFocused && (
-              <View style={styles.overlay}>
-                {isContinueWatching && (
-                  <View style={styles.continueWatchingBadge}>
-                    <Play size={16} color="#ffffff" fill="#ffffff" />
-                    <ThemedText style={styles.continueWatchingText}>继续观看</ThemedText>
-                  </View>
-                )}
+
+            {/* 焦点高光：模拟 tvOS 海报的玻璃反光 */}
+            {isFocused && <View pointerEvents="none" style={styles.sheen} />}
+
+            {isFocused && isContinueWatching && (
+              <View style={styles.continueWatchingBadge}>
+                <Play size={12} color="#000" fill="#000" />
+                <Text style={styles.continueWatchingText}>继续观看</Text>
               </View>
             )}
 
-            {/* 进度条 */}
+            {rate ? (
+              <View style={styles.ratingContainer}>
+                <Star size={10} color="#FFFFFF" fill="#FFFFFF" />
+                <Text style={styles.ratingText}>{rate}</Text>
+              </View>
+            ) : null}
+
+            {/* 观看进度 */}
             {isContinueWatching && (
               <View style={styles.progressContainer}>
                 <View style={[styles.progressBar, { width: `${(progress || 0) * 100}%` }]} />
               </View>
             )}
-
-            {rate && (
-              <View style={styles.ratingContainer}>
-                <Star size={12} color="#FFD700" fill="#FFD700" />
-                <ThemedText style={styles.ratingText}>{rate}</ThemedText>
-              </View>
-            )}
-            {year && (
-              <View style={styles.yearBadge}>
-                <Text style={styles.badgeText}>{year}</Text>
-              </View>
-            )}
-            {sourceName && (
-              <View style={styles.sourceNameBadge}>
-                <Text style={styles.badgeText}>{sourceName}</Text>
-              </View>
-            )}
           </View>
           <View style={styles.infoContainer}>
-            <ThemedText numberOfLines={1}>{title}</ThemedText>
-            {isContinueWatching && (
-              <View style={styles.infoRow}>
-                <ThemedText style={styles.continueLabel}>
-                  第{episodeIndex}集 已观看 {Math.round((progress || 0) * 100)}%
-                </ThemedText>
-              </View>
-            )}
+            <Text numberOfLines={1} style={[styles.title, isFocused && styles.titleFocused]}>
+              {title}
+            </Text>
+            {(() => {
+              const meta = isContinueWatching
+                ? `第 ${episodeIndex} 集 · 已看 ${Math.round((progress || 0) * 100)}%`
+                : [year, sourceName].filter(Boolean).join(" · ");
+              return meta ? (
+                <Text numberOfLines={1} style={styles.meta}>
+                  {meta}
+                </Text>
+              ) : null;
+            })()}
           </View>
         </Pressable>
       </Animated.View>
@@ -231,46 +225,36 @@ const styles = StyleSheet.create({
   },
   pressable: {
     width: CARD_WIDTH + 20,
-    height: CARD_HEIGHT + 60,
-    justifyContent: 'center',
+    height: CARD_HEIGHT + 80,
+    justifyContent: "flex-start",
     alignItems: "center",
     overflow: "visible",
   },
   card: {
-    marginTop: 10,
+    marginTop: 12,
     width: CARD_WIDTH,
     height: CARD_HEIGHT,
-    borderRadius: 8,
-    backgroundColor: "#222",
+    borderRadius: 12,
+    backgroundColor: Colors.dark.surface,
     overflow: "hidden",
+  },
+  cardFocused: {
+    elevation: 16,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 14 },
+    shadowOpacity: 0.6,
+    shadowRadius: 20,
   },
   poster: {
     width: "100%",
     height: "100%",
   },
-  overlay: {
+  sheen: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: "rgba(0,0,0,0.3)",
-    borderColor: Colors.dark.primary,
-    borderWidth: 2,
-    borderRadius: 8,
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  buttonRow: {
-    position: "absolute",
-    top: 8,
-    left: 8,
-    flexDirection: "row",
-    gap: 8,
-  },
-  iconButton: {
-    padding: 4,
-  },
-  favButton: {
-    position: "absolute",
-    top: 8,
-    left: 8,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.35)",
+    backgroundColor: "rgba(255,255,255,0.06)",
   },
   ratingContainer: {
     position: "absolute",
@@ -278,86 +262,67 @@ const styles = StyleSheet.create({
     right: 8,
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: "rgba(0, 0, 0, 0.7)",
+    backgroundColor: "rgba(0, 0, 0, 0.55)",
     borderRadius: 6,
     paddingHorizontal: 6,
-    paddingVertical: 3,
+    paddingVertical: 2,
   },
   ratingText: {
-    color: "#FFD700",
-    fontSize: 12,
-    fontWeight: "bold",
-    marginLeft: 4,
+    color: "#FFFFFF",
+    fontSize: 11,
+    fontWeight: "700",
+    marginLeft: 3,
   },
   infoContainer: {
     width: CARD_WIDTH,
-    marginTop: 8,
+    marginTop: 10,
     alignItems: "flex-start",
-    marginBottom: 16,
-    paddingHorizontal: 4,
-  },
-  infoRow: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    width: "100%",
+    paddingHorizontal: 2,
   },
   title: {
-    color: "white",
-    fontSize: 16,
-    fontWeight: "bold",
-    textAlign: "center",
+    color: "rgba(255,255,255,0.82)",
+    fontSize: 14,
+    fontWeight: "500",
   },
-  yearBadge: {
-    position: "absolute",
-    top: 8,
-    right: 8,
-    backgroundColor: "rgba(0, 0, 0, 0.7)",
-    borderRadius: 6,
-    paddingHorizontal: 6,
-    paddingVertical: 3,
+  titleFocused: {
+    color: "#FFFFFF",
+    fontWeight: "700",
   },
-  sourceNameBadge: {
-    position: "absolute",
-    top: 8,
-    left: 8,
-    backgroundColor: "rgba(0, 0, 0, 0.7)",
-    borderRadius: 6,
-    paddingHorizontal: 6,
-    paddingVertical: 3,
-  },
-  badgeText: {
-    color: "white",
+  meta: {
+    color: Colors.dark.secondaryText,
     fontSize: 12,
-    fontWeight: "bold",
+    marginTop: 2,
   },
   progressContainer: {
     position: "absolute",
-    bottom: 0,
-    left: 0,
-    right: 0,
+    bottom: 8,
+    left: 8,
+    right: 8,
     height: 4,
-    backgroundColor: "rgba(0, 0, 0, 0.8)",
+    borderRadius: 2,
+    overflow: "hidden",
+    backgroundColor: "rgba(255, 255, 255, 0.3)",
   },
   progressBar: {
     height: 4,
-    backgroundColor: Colors.dark.primary,
+    borderRadius: 2,
+    backgroundColor: "#FFFFFF",
   },
   continueWatchingBadge: {
+    position: "absolute",
+    left: 8,
+    bottom: 20,
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: Colors.dark.primary,
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderRadius: 5,
+    backgroundColor: "#FFFFFF",
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 999,
   },
   continueWatchingText: {
-    color: "white",
-    marginLeft: 5,
-    fontSize: 12,
-    fontWeight: "bold",
-  },
-  continueLabel: {
-    color: Colors.dark.primary,
-    fontSize: 12,
+    color: "#000",
+    marginLeft: 4,
+    fontSize: 11,
+    fontWeight: "700",
   },
 });
