@@ -315,13 +315,15 @@ export class SearchHistoryManager {
 export class SettingsManager {
   static async get(): Promise<AppSettings> {
     const defaultSettings: AppSettings = {
-      apiBaseUrl: "",
+      // 默认连接本站 MoonTV（设置里可改）
+      apiBaseUrl: "https://bde4.dpdns.org",
       remoteInputEnabled: true,
       videoSource: {
         enabledAll: true,
         sources: {},
       },
-      m3uUrl: "",
+      // 本站电视直播订阅（已按规则清洗，每 6 小时更新）
+      m3uUrl: "https://bde4.dpdns.org/tv/live.m3u",
     };
     try {
       const data = await AsyncStorage.getItem(STORAGE_KEYS.SETTINGS);

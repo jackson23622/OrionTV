@@ -2,9 +2,19 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 
 // region: --- Interface Definitions ---
 export interface DoubanItem {
+  /** 豆瓣影片 id（首页大图取剧照用） */
+  id?: string;
   title: string;
   poster: string;
   rate?: string;
+  year?: string;
+}
+
+/** 首页大图用的横版剧照 */
+export interface Backdrop {
+  url: string;
+  width: number;
+  height: number;
 }
 
 export interface DoubanResponse {
@@ -231,6 +241,23 @@ export class API {
     const url = `/api/douban?type=${type}&tag=${encodeURIComponent(tag)}&pageSize=${pageSize}&pageStart=${pageStart}`;
     const response = await this._fetch(url);
     return response.json();
+  }
+
+  /**
+   * 首页大图：取豆瓣影片的一张横版剧照（服务端 /api/douban/backdrop，带一天缓存）。
+   * 服务端没有该接口、豆瓣不可达或没有合适剧照时返回 null，调用方回落到海报。
+   */
+  async getDoubanBackdrop(kind: "movie" | "tv", doubanId: string): Promise<Backdrop | null> {
+    if (!/^\d{4,12}$/.test(doubanId)) return null;
+    try {
+      const response = await this._fetch(
+        `/api/douban/backdrop?kind=${kind}&id=${encodeURIComponent(doubanId)}`
+      );
+      const data = await response.json();
+      return data && typeof data.url === "string" && data.url ? (data as Backdrop) : null;
+    } catch {
+      return null;
+    }
   }
 
   async searchVideos(query: string): Promise<{ results: SearchResult[] }> {

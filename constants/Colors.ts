@@ -4,7 +4,6 @@
  */
 
 const tintColorLight = "#0a7ea4";
-const tintColorDark = "#aaa";
 
 export const Colors = {
   light: {
@@ -17,15 +16,23 @@ export const Colors = {
     link: "#0a7ea4",
     border: "#E5E5E5",
   },
+  // Apple TV 风格：纯黑背景、白色文字，焦点为白色高亮，强调色为系统蓝
   dark: {
-    text: "#ECEDEE",
-    background: "#151718",
-    tint: tintColorDark,
-    icon: "#9BA1A6",
-    tabIconDefault: "#9BA1A6",
-    tabIconSelected: tintColorDark,
-    link: "#0a7ea4",
-    border: "#333",
-    primary: "#00bb5e",
+    text: "#FFFFFF",
+    background: "#000000",
+    tint: "#FFFFFF",
+    icon: "#98989F",
+    tabIconDefault: "#98989F",
+    tabIconSelected: "#FFFFFF",
+    link: "#0A84FF",
+    border: "#2C2C2E",
+    primary: "#0A84FF",
+    secondaryText: "#98989F",
+    tertiaryText: "#636366",
+    surface: "#1C1C1E",
+    surfaceElevated: "#2C2C2E",
+    fill: "rgba(118, 118, 128, 0.24)",
+    focus: "#FFFFFF",
+    onFocus: "#000000",
   },
 };

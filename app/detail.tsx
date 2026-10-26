@@ -1,5 +1,7 @@
 import React, { useEffect } from "react";
-import { View, Text, StyleSheet, Image, ScrollView, ActivityIndicator } from "react-native";
+import { View, Text, StyleSheet, Image, ScrollView, ActivityIndicator, useWindowDimensions } from "react-native";
+import { LinearGradient } from "expo-linear-gradient";
+import { api } from "@/services/api";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { ThemedView } from "@/components/ThemedView";
 import { ThemedText } from "@/components/ThemedText";
@@ -20,6 +22,7 @@ export default function DetailScreen() {
   const responsiveConfig = useResponsiveLayout();
   const commonStyles = getCommonResponsiveStyles(responsiveConfig);
   const { deviceType, spacing } = responsiveConfig;
+  const { height: screenHeight } = useWindowDimensions();
 
   const {
     detail,
@@ -122,7 +125,7 @@ export default function DetailScreen() {
                   <FontAwesome
                     name={isFavorited ? "heart" : "heart-o"}
                     size={20}
-                    color={isFavorited ? "#feff5f" : "#ccc"}
+                    color={isFavorited ? "#FF453A" : "#FFFFFF"}
                   />
                 </StyledButton>
               </View>
@@ -163,7 +166,7 @@ export default function DetailScreen() {
                       </View>
                     )}
                     {item.resolution && (
-                      <View style={[dynamicStyles.badge, { backgroundColor: "#666" }, isSelected && dynamicStyles.selectedBadge]}>
+                      <View style={[dynamicStyles.badge, { backgroundColor: "rgba(255,255,255,0.12)" }, isSelected && dynamicStyles.selectedBadge]}>
                         <Text style={dynamicStyles.badgeText}>{item.resolution}</Text>
                       </View>
                     )}
@@ -191,9 +194,22 @@ export default function DetailScreen() {
         </ScrollView>
       );
     } else {
-      // 平板和TV端水平布局
+      // 平板和TV端水平布局（顶部为虚化海报背景，Apple TV 风格）
       return (
         <ScrollView style={dynamicStyles.scrollContainer}>
+          <View pointerEvents="none" style={[dynamicStyles.backdrop, { height: screenHeight * 0.75 }]}>
+            <Image
+              source={{ uri: api.getImageProxyUrl(detail.poster) }}
+              style={StyleSheet.absoluteFill}
+              resizeMode="cover"
+              blurRadius={30}
+            />
+            <LinearGradient
+              colors={["rgba(0,0,0,0.35)", "rgba(0,0,0,0.75)", "#000"]}
+              locations={[0, 0.6, 1]}
+              style={StyleSheet.absoluteFill}
+            />
+          </View>
           <View style={dynamicStyles.topContainer}>
             <Image source={{ uri: detail.poster }} style={dynamicStyles.poster} />
             <View style={dynamicStyles.infoContainer}>
@@ -205,7 +221,7 @@ export default function DetailScreen() {
                   <FontAwesome
                     name={isFavorited ? "heart" : "heart-o"}
                     size={24}
-                    color={isFavorited ? "#feff5f" : "#ccc"}
+                    color={isFavorited ? "#FF453A" : "#FFFFFF"}
                   />
                 </StyledButton>
               </View>
@@ -246,7 +262,7 @@ export default function DetailScreen() {
                         </View>
                       )}
                       {item.resolution && (
-                        <View style={[dynamicStyles.badge, { backgroundColor: "#666" }, isSelected && dynamicStyles.selectedBadge]}>
+                        <View style={[dynamicStyles.badge, { backgroundColor: "rgba(255,255,255,0.12)" }, isSelected && dynamicStyles.selectedBadge]}>
                           <Text style={dynamicStyles.badgeText}>{item.resolution}</Text>
                         </View>
                       )}
@@ -302,6 +318,14 @@ const createResponsiveStyles = (deviceType: string, spacing: number) => {
   return StyleSheet.create({
     scrollContainer: {
       flex: 1,
+      backgroundColor: "#000",
+    },
+    backdrop: {
+      position: "absolute",
+      top: 0,
+      left: 0,
+      right: 0,
+      opacity: 0.9,
     },
     
     // 移动端专用样式
@@ -328,16 +352,18 @@ const createResponsiveStyles = (deviceType: string, spacing: number) => {
     // 平板和TV端样式
     topContainer: {
       flexDirection: "row",
-      padding: spacing,
+      paddingHorizontal: isTV ? 48 : spacing,
+      paddingTop: isTV ? 24 : spacing,
+      paddingBottom: spacing,
     },
     poster: {
       width: isTV ? 200 : 160,
       height: isTV ? 300 : 240,
-      borderRadius: 8,
+      borderRadius: 14,
     },
     infoContainer: {
       flex: 1,
-      marginLeft: spacing,
+      marginLeft: isTV ? 32 : spacing,
       justifyContent: "flex-start",
     },
     descriptionScrollView: {
@@ -352,8 +378,10 @@ const createResponsiveStyles = (deviceType: string, spacing: number) => {
     },
     title: {
       paddingTop: 16,
-      fontSize: isMobile ? 20 : isTablet ? 24 : 28,
-      fontWeight: "bold",
+      fontSize: isMobile ? 22 : isTablet ? 28 : 36,
+      lineHeight: isMobile ? 28 : isTablet ? 34 : 42,
+      fontWeight: "800",
+      letterSpacing: -0.5,
       flexShrink: 1,
       color: 'white',
     },
@@ -367,19 +395,20 @@ const createResponsiveStyles = (deviceType: string, spacing: number) => {
       marginBottom: spacing / 2,
     },
     metaText: {
-      color: "#aaa",
-      marginRight: spacing / 2,
-      fontSize: isMobile ? 12 : 14,
+      color: "rgba(255,255,255,0.7)",
+      marginRight: spacing,
+      fontSize: isMobile ? 13 : 15,
+      fontWeight: "500",
     },
     description: {
-      fontSize: isMobile ? 13 : 14,
-      color: "#ccc",
-      lineHeight: isMobile ? 18 : 22,
+      fontSize: isMobile ? 14 : 15,
+      color: "rgba(255,255,255,0.82)",
+      lineHeight: isMobile ? 20 : 24,
     },
 
     // 播放源和剧集样式
     bottomContainer: {
-      paddingHorizontal: spacing,
+      paddingHorizontal: isTV ? 48 : spacing,
     },
     sourcesContainer: {
       marginTop: spacing,
@@ -390,8 +419,8 @@ const createResponsiveStyles = (deviceType: string, spacing: number) => {
       marginBottom: spacing / 2,
     },
     sourcesTitle: {
-      fontSize: isMobile ? 16 : isTablet ? 18 : 20,
-      fontWeight: "bold",
+      fontSize: isMobile ? 17 : isTablet ? 19 : 20,
+      fontWeight: "700",
       color: 'white',
     },
     sourceList: {
@@ -407,8 +436,8 @@ const createResponsiveStyles = (deviceType: string, spacing: number) => {
       fontSize: isMobile ? 14 : 16,
     },
     badge: {
-      backgroundColor: "#666",
-      borderRadius: 10,
+      backgroundColor: "rgba(255,255,255,0.18)",
+      borderRadius: 6,
       paddingHorizontal: 6,
       paddingVertical: 2,
       marginLeft: 8,
@@ -420,7 +449,7 @@ const createResponsiveStyles = (deviceType: string, spacing: number) => {
       paddingBottom: 2.5,
     },
     selectedBadge: {
-      backgroundColor: "#4c4c4c",
+      backgroundColor: "rgba(255,255,255,0.3)",
     },
 
     episodesContainer: {
@@ -428,8 +457,8 @@ const createResponsiveStyles = (deviceType: string, spacing: number) => {
       paddingBottom: spacing * 2,
     },
     episodesTitle: {
-      fontSize: isMobile ? 16 : isTablet ? 18 : 20,
-      fontWeight: "bold",
+      fontSize: isMobile ? 17 : isTablet ? 19 : 20,
+      fontWeight: "700",
       marginBottom: spacing / 2,
       color: 'white',
     },
