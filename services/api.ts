@@ -243,6 +243,50 @@ export class API {
     return response.json();
   }
 
+  /** 分类页「榜单」：与网页版相同的 /api/douban/categories（豆瓣 recent_hot） */
+  async getDoubanCategories(params: {
+    kind: "movie" | "tv";
+    category: string;
+    type: string;
+    limit?: number;
+    start?: number;
+  }): Promise<DoubanResponse> {
+    const qs = new URLSearchParams({
+      kind: params.kind,
+      category: params.category,
+      type: params.type,
+      limit: String(params.limit ?? 25),
+      start: String(params.start ?? 0),
+    });
+    const response = await this._fetch(`/api/douban/categories?${qs.toString()}`);
+    return response.json();
+  }
+
+  /** 分类页「筛选」：与网页版相同的 /api/douban/recommends（类型 / 地区 / 年代 / 平台 / 排序） */
+  async getDoubanRecommends(params: {
+    type: "movie" | "tv" | "show";
+    genre: string;
+    region: string;
+    year: string;
+    platform: string;
+    sort: string;
+    limit?: number;
+    start?: number;
+  }): Promise<DoubanResponse> {
+    const qs = new URLSearchParams({
+      type: params.type,
+      genre: params.genre,
+      region: params.region,
+      year: params.year,
+      platform: params.platform,
+      sort: params.sort,
+      limit: String(params.limit ?? 25),
+      start: String(params.start ?? 0),
+    });
+    const response = await this._fetch(`/api/douban/recommends?${qs.toString()}`);
+    return response.json();
+  }
+
   /**
    * 首页大图：取豆瓣影片的一张横版剧照（服务端 /api/douban/backdrop，带一天缓存）。
    * 服务端没有该接口、豆瓣不可达或没有合适剧照时返回 null，调用方回落到海报。

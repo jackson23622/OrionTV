@@ -1,7 +1,7 @@
 import React from "react";
-import CategoryBrowser from "@/components/CategoryBrowser";
+import FilterBrowser from "@/components/tv/FilterBrowser";
 
-/** 电视端顶栏“分类”：按分类和标签浏览全部影片 */
+/** 顶栏“分类”：与网页版一致的榜单 / 筛选（电影、剧集、综艺） */
 export default function BrowseScreen() {
-  return <CategoryBrowser isRoot={false} title="分类" />;
+  return <FilterBrowser />;
 }
