@@ -322,8 +322,7 @@ export class SettingsManager {
         enabledAll: true,
         sources: {},
       },
-      // 本站电视直播订阅（已按规则清洗，每 6 小时更新）
-      m3uUrl: "https://bde4.dpdns.org/tv/live.m3u",
+      m3uUrl: "",
     };
     try {
       const data = await AsyncStorage.getItem(STORAGE_KEYS.SETTINGS);

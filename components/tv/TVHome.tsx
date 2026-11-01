@@ -4,20 +4,18 @@ import {
   Animated,
   BackHandler,
   FlatList,
-  HWEvent,
   Image,
   Platform,
   ScrollView,
   StyleSheet,
   Text,
   ToastAndroid,
-  useTVEventHandler,
   useWindowDimensions,
   View,
 } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
 import { useFocusEffect, useRouter } from "expo-router";
-import { LogOut, Play, Search, Settings } from "lucide-react-native";
+import { LogOut, Search, Settings } from "lucide-react-native";
 
 import { api, Backdrop, DoubanItem } from "@/services/api";
 import { PlayRecordManager } from "@/services/storage";
@@ -26,7 +24,7 @@ import { useSettingsStore } from "@/stores/settingsStore";
 import type { RowItem } from "@/stores/homeStore";
 import { getApiConfigErrorMessage, useApiConfig } from "@/hooks/useApiConfig";
 import VideoCard from "@/components/VideoCard";
-import { FocusPill } from "@/components/tv/FocusPill";
+import { StyledButton } from "@/components/StyledButton";
 import { Colors } from "@/constants/Colors";
 
 /** 首页片架（豆瓣分类），顺序即显示顺序 */
@@ -44,9 +42,6 @@ const SHELVES: { key: string; title: string; type: "movie" | "tv"; tag: string }
 
 const HERO_INTERVAL = 8000;
 
-// 非电视平台（网页预览等）没有遥控器事件，用空实现兜底
-const useRemoteEvents: typeof useTVEventHandler =
-  typeof useTVEventHandler === "function" ? useTVEventHandler : () => {};
 const GUTTER = 48;
 
 type HomeItem = RowItem & { doubanId?: string; kind?: "movie" | "tv" };
@@ -137,8 +132,8 @@ function HeroPoster({ slide, width, height }: { slide: Slide; width: number; hei
 
 /**
  * 电视端首页（Apple TV 风格）：
- *  - 顶部透明导航：首页 / 分类 / 直播 / 收藏，右侧搜索、设置、退出
- *  - 全屏大图轮播：豆瓣横版剧照铺满，8 秒切换，焦点在“播放”上时可用左右键切换
+ *  - 顶部导航：首页 / 分类 / 收藏，右侧搜索、设置、退出
+ *  - 大图轮播：豆瓣横版剧照铺满，8 秒自动切换
  *  - 横向片架：继续观看 + 豆瓣各分类
  */
 export default function TVHome() {
@@ -158,7 +153,9 @@ export default function TVHome() {
 
   const scrollRef = useRef<ScrollView>(null);
   const shelfY = useRef<Record<string, number>>({});
-  const heroFocused = useRef(false);
+  // 首次进入时把焦点放到“播放”上，之后不再抢焦点（避免后台轮播时把焦点从其它页面抢回来）
+  const [initialFocus, setInitialFocus] = useState(true);
+  const NAV_H = 64;
   const timer = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const ready = apiConfigStatus.isConfigured && !apiConfigStatus.needsConfiguration;
@@ -268,23 +265,15 @@ export default function TVHome() {
     timer.current = setInterval(() => setHeroIndex((i) => (i + 1) % slides.length), HERO_INTERVAL);
   }, [slides.length]);
 
-  useEffect(() => {
-    setHeroIndex(0);
-    restartTimer();
-    return () => {
-      if (timer.current) clearInterval(timer.current);
-    };
-  }, [restartTimer]);
-
-  // 焦点在“播放”按钮上时，左右键切换大图
-  useRemoteEvents((evt: HWEvent) => {
-    if (!heroFocused.current || slides.length < 2) return;
-    if (evt.eventType === "right" || evt.eventType === "left") {
-      const step = evt.eventType === "right" ? 1 : -1;
-      setHeroIndex((i) => (i + step + slides.length) % slides.length);
+  // 只在首页可见时轮播；进入分类、设置等页面时停止，避免后台刷新
+  useFocusEffect(
+    useCallback(() => {
       restartTimer();
-    }
-  });
+      return () => {
+        if (timer.current) clearInterval(timer.current);
+      };
+    }, [restartTimer])
+  );
 
   // ---------- 返回键：首页按两次退出 ----------
   const backPressAt = useRef<number | null>(null);
@@ -318,19 +307,27 @@ export default function TVHome() {
   };
 
   // ---------- 渲染 ----------
+  // 顶部导航：放在滚动区域外（与原版相同的结构），使用电视上验证过的 StyledButton
   const nav = (
-    <View style={styles.nav} pointerEvents="box-none">
+    <View style={[styles.nav, { height: NAV_H }]}>
       <Text style={styles.brand}>MoonTV</Text>
       <View style={styles.navTabs}>
-        <FocusPill label="首页" active hasTVPreferredFocus={!slides.length} onFocus={() => scrollRef.current?.scrollTo({ y: 0 })} />
-        <FocusPill label="分类" onPress={() => router.push("/browse")} />
-        <FocusPill label="直播" onPress={() => router.push("/live")} />
-        <FocusPill label="收藏" onPress={() => router.push("/favorites")} />
+        <StyledButton text="首页" isSelected variant="ghost" style={styles.navButton} onPress={() => scrollRef.current?.scrollTo({ y: 0 })} />
+        <StyledButton text="分类" variant="ghost" style={styles.navButton} onPress={() => router.push("/browse")} />
+        <StyledButton text="收藏" variant="ghost" style={styles.navButton} onPress={() => router.push("/favorites")} />
       </View>
       <View style={styles.navRight}>
-        <FocusPill icon={(c) => <Search size={18} color={c} />} onPress={() => router.push("/search")} />
-        <FocusPill icon={(c) => <Settings size={18} color={c} />} onPress={() => router.push("/settings")} />
-        {isLoggedIn && <FocusPill icon={(c) => <LogOut size={18} color={c} />} onPress={logout} />}
+        <StyledButton variant="ghost" style={styles.navIcon} onPress={() => router.push("/search")}>
+          <Search size={20} color="#fff" />
+        </StyledButton>
+        <StyledButton variant="ghost" style={styles.navIcon} onPress={() => router.push("/settings")}>
+          <Settings size={20} color="#fff" />
+        </StyledButton>
+        {isLoggedIn && (
+          <StyledButton variant="ghost" style={styles.navIcon} onPress={logout}>
+            <LogOut size={20} color="#fff" />
+          </StyledButton>
+        )}
       </View>
     </View>
   );
@@ -353,10 +350,8 @@ export default function TVHome() {
               <Text style={styles.message}>
                 {apiConfigStatus.error || getApiConfigErrorMessage(apiConfigStatus)}
               </Text>
-              <FocusPill
-                label="打开设置"
-                size="lg"
-                filled
+              <StyledButton
+                text="打开设置"
                 hasTVPreferredFocus
                 style={{ marginTop: 24 }}
                 onPress={() => router.push("/settings")}
@@ -380,11 +375,14 @@ export default function TVHome() {
     ...SHELVES.map((s) => ({ key: s.key, title: s.title, items: shelves[s.key] || [] })).filter((s) => s.items.length),
   ];
 
+  const heroH = height - NAV_H;
+
   return (
     <View style={styles.screen}>
+      {nav}
       <ScrollView ref={scrollRef} showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 48 }}>
         {/* 全屏大图 */}
-        <View style={{ width, height }}>
+        <View style={{ width, height: heroH }}>
           {slide && (
             <HeroBackground
               key={slide.item.title}
@@ -408,10 +406,8 @@ export default function TVHome() {
 
           {/* 没有剧照（或剧照加载失败）时：右侧清晰海报 */}
           {slide && (heroBackdrop === null || failedStill === slide.item.title) && (
-            <HeroPoster key={`poster-${slide.item.title}`} slide={slide} width={width} height={height} />
+            <HeroPoster key={`poster-${slide.item.title}`} slide={slide} width={width} height={heroH} />
           )}
-
-          {nav}
 
           {loading && !slide ? (
             <View style={styles.center}>
@@ -420,28 +416,24 @@ export default function TVHome() {
           ) : error && !slide ? (
             <View style={styles.center}>
               <Text style={styles.messageTitle}>{error}</Text>
-              <FocusPill label="重试" size="lg" filled hasTVPreferredFocus style={{ marginTop: 24 }} onPress={loadShelves} />
+              <StyledButton text="重试" hasTVPreferredFocus style={{ marginTop: 24 }} onPress={loadShelves} />
             </View>
           ) : slide ? (
-            <View style={[styles.heroText, { bottom: height * 0.16, maxWidth: width * 0.5 }]}>
+            <View style={[styles.heroText, { bottom: heroH * 0.14, maxWidth: width * 0.5 }]}>
               <Text style={styles.heroTitle} numberOfLines={2}>
                 {slide.item.title}
               </Text>
               <Text style={styles.heroMeta}>{heroMeta.join("   ")}</Text>
               <View style={styles.heroButtons}>
-                <FocusPill
-                  label="播放"
-                  size="lg"
-                  filled
-                  hasTVPreferredFocus
-                  icon={(c) => <Play size={18} color={c} fill={c} />}
+                <StyledButton
+                  text="播放"
+                  hasTVPreferredFocus={initialFocus}
+                  style={styles.playButton}
+                  textStyle={styles.playText}
                   onPress={() => openDetail(slide.item)}
                   onFocus={() => {
-                    heroFocused.current = true;
+                    if (initialFocus) setInitialFocus(false);
                     scrollRef.current?.scrollTo({ y: 0, animated: true });
-                  }}
-                  onBlur={() => {
-                    heroFocused.current = false;
                   }}
                 />
               </View>
@@ -450,7 +442,6 @@ export default function TVHome() {
                   {slides.map((s, i) => (
                     <View key={s.item.title} style={[styles.dot, i === heroIndex && styles.dotActive]} />
                   ))}
-                  <Text style={styles.hint}>左右键切换</Text>
                 </View>
               )}
             </View>
@@ -511,16 +502,25 @@ const styles = StyleSheet.create({
     paddingHorizontal: GUTTER,
   },
   nav: {
-    position: "absolute",
-    top: 0,
-    left: 0,
-    right: 0,
-    height: 72,
     paddingHorizontal: GUTTER,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    zIndex: 10,
+    backgroundColor: "#000",
+  },
+  navButton: {
+    marginHorizontal: 4,
+  },
+  navIcon: {
+    marginLeft: 6,
+    borderRadius: 999,
+  },
+  playButton: {
+    minWidth: 120,
+  },
+  playText: {
+    fontSize: 18,
+    fontWeight: "700",
   },
   brand: {
     color: "#FFFFFF",
@@ -585,11 +585,6 @@ const styles = StyleSheet.create({
   dotActive: {
     width: 20,
     backgroundColor: "#FFFFFF",
-  },
-  hint: {
-    marginLeft: 10,
-    color: "rgba(255,255,255,0.5)",
-    fontSize: 12,
   },
   shelf: {
     marginTop: 8,
