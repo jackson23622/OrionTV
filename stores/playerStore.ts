@@ -5,6 +5,15 @@ import { RefObject } from "react";
 import { PlayRecord, PlayRecordManager, PlayerSettingsManager } from "@/services/storage";
 import useDetailStore, { episodesSelectorBySource } from "./detailStore";
 import Logger from '@/utils/Logger';
+import {
+  formatSkip,
+  inOutro,
+  loadSkipConfig,
+  loadSkipEnabled,
+  saveSkipConfig,
+  saveSkipEnabled,
+  SkipConfig,
+} from "@/utils/skipSegments";
 
 const logger = Logger.withTag('PlayerStore');
 
@@ -29,8 +38,14 @@ interface PlayerState {
   progressPosition: number;
   initialPosition: number;
   playbackRate: number;
+  /** 片头结束位置（毫秒） */
   introEndTime?: number;
+  /** 片尾长度（毫秒，从结尾往前算） */
   outroStartTime?: number;
+  /** 自动跳过片头片尾总开关 */
+  skipEnabled: boolean;
+  toggleSkipEnabled: () => void;
+  _outroHandled: boolean;
   setVideoRef: (ref: RefObject<Video>) => void;
   loadVideo: (options: {
     source: string;
@@ -57,6 +72,7 @@ interface PlayerState {
   _isRecordSaveThrottled: boolean;
   // Internal helper
   _savePlayRecord: (updates?: Partial<PlayRecord>, options?: { immediate?: boolean }) => void;
+  _saveSkip: (patch: Partial<SkipConfig>) => void;
   handleVideoError: (errorType: 'ssl' | 'network' | 'other', failedUrl: string) => Promise<void>;
 }
 
@@ -78,6 +94,8 @@ const usePlayerStore = create<PlayerState>((set, get) => ({
   playbackRate: 1.0,
   introEndTime: undefined,
   outroStartTime: undefined,
+  skipEnabled: false,
+  _outroHandled: false,
   _seekTimeout: undefined,
   _isRecordSaveThrottled: false,
 
@@ -215,14 +233,29 @@ const usePlayerStore = create<PlayerState>((set, get) => ({
       const episodesMappingEnd = performance.now();
       logger.info(`[PERF] Episodes mapping (${episodes.length} episodes) took ${(episodesMappingEnd - episodesMappingStart).toFixed(2)}ms`);
       
+      // 片头片尾按片名记忆（与网页版一致）；旧版本按片源记录的时间迁移过来
+      const savedSkip = await loadSkipConfig(detail!.title);
+      let skipCfg: SkipConfig = savedSkip || { intro: 0, outro: 0 };
+      const legacyIntro = playRecord?.introEndTime || playerSettings?.introEndTime;
+      const legacyOutro = playRecord?.outroStartTime || playerSettings?.outroStartTime;
+      const hasLegacy = !savedSkip && !!(legacyIntro || legacyOutro);
+      if (hasLegacy) {
+        skipCfg = { intro: Math.round((legacyIntro || 0) / 1000), outro: Math.round((legacyOutro || 0) / 1000) };
+        await saveSkipConfig(detail!.title, skipCfg);
+      }
+      // 旧版本标记过片头片尾的用户默认保持开启
+      const skipEnabled = await loadSkipEnabled(hasLegacy);
+
       set({
         isLoading: false,
         currentEpisodeIndex: episodeIndex,
         initialPosition: position || initialPositionFromRecord,
         playbackRate: savedPlaybackRate,
         episodes: mappedEpisodes,
-        introEndTime: playRecord?.introEndTime || playerSettings?.introEndTime,
-        outroStartTime: playRecord?.outroStartTime || playerSettings?.outroStartTime,
+        introEndTime: skipCfg.intro ? skipCfg.intro * 1000 : undefined,
+        outroStartTime: skipCfg.outro ? skipCfg.outro * 1000 : undefined,
+        skipEnabled,
+        _outroHandled: false,
       });
       
       const perfEnd = performance.now();
@@ -243,6 +276,7 @@ const usePlayerStore = create<PlayerState>((set, get) => ({
       set({
         currentEpisodeIndex: index,
         showNextEpisodeOverlay: false,
+        _outroHandled: false,
         initialPosition: 0,
         progressPosition: 0,
         seekPosition: 0,
@@ -297,56 +331,64 @@ const usePlayerStore = create<PlayerState>((set, get) => ({
   },
 
   setIntroEndTime: () => {
-    const { status, introEndTime: existingIntroEndTime } = get();
-    const detail = useDetailStore.getState().detail;
-    if (!status?.isLoaded || !detail) return;
-
-    if (existingIntroEndTime) {
-      // Clear the time
-      set({ introEndTime: undefined });
-      get()._savePlayRecord({ introEndTime: undefined }, { immediate: true });
-      Toast.show({
-        type: "info",
-        text1: "已清除片头时间",
-      });
-    } else {
-      // Set the time
-      const newIntroEndTime = status.positionMillis;
-      set({ introEndTime: newIntroEndTime });
-      get()._savePlayRecord({ introEndTime: newIntroEndTime }, { immediate: true });
-      Toast.show({
-        type: "success",
-        text1: "设置成功",
-        text2: "片头时间已记录。",
-      });
-    }
+    const { status, introEndTime } = get();
+    if (!status?.isLoaded) return;
+    // 已设置则清除，否则把当前位置记为片头结束
+    const sec = introEndTime ? 0 : Math.floor(status.positionMillis / 1000);
+    get()._saveSkip({ intro: sec });
+    Toast.show({
+      type: sec ? "success" : "info",
+      text1: sec ? `片头：${formatSkip(sec)}` : "已清除片头时间",
+      text2: sec ? "本剧所有集通用" : undefined,
+    });
   },
 
   setOutroStartTime: () => {
-    const { status, outroStartTime: existingOutroStartTime } = get();
-    const detail = useDetailStore.getState().detail;
-    if (!status?.isLoaded || !detail) return;
+    const { status, outroStartTime } = get();
+    if (!status?.isLoaded) return;
+    if (!outroStartTime && !status.durationMillis) return;
+    // 已设置则清除，否则把「当前位置到结尾」记为片尾长度
+    const sec = outroStartTime ? 0 : Math.ceil((status.durationMillis! - status.positionMillis) / 1000);
+    get()._saveSkip({ outro: sec });
+    Toast.show({
+      type: sec ? "success" : "info",
+      text1: sec ? `片尾：${formatSkip(sec)}` : "已清除片尾时间",
+      text2: sec ? "本剧所有集通用" : undefined,
+    });
+  },
 
-    if (existingOutroStartTime) {
-      // Clear the time
-      set({ outroStartTime: undefined });
-      get()._savePlayRecord({ outroStartTime: undefined }, { immediate: true });
-      Toast.show({
-        type: "info",
-        text1: "已清除片尾时间",
-      });
-    } else {
-      // Set the time
-      if (!status.durationMillis) return;
-      const newOutroStartTime = status.durationMillis - status.positionMillis;
-      set({ outroStartTime: newOutroStartTime });
-      get()._savePlayRecord({ outroStartTime: newOutroStartTime }, { immediate: true });
-      Toast.show({
-        type: "success",
-        text1: "设置成功",
-        text2: "片尾时间已记录。",
-      });
+  _saveSkip: (patch) => {
+    const detail = useDetailStore.getState().detail;
+    if (!detail) return;
+    const { introEndTime, outroStartTime, skipEnabled } = get();
+    const cfg: SkipConfig = {
+      intro: Math.round((introEndTime || 0) / 1000),
+      outro: Math.round((outroStartTime || 0) / 1000),
+      ...patch,
+    };
+    const next: Partial<PlayerState> = {
+      introEndTime: cfg.intro ? cfg.intro * 1000 : undefined,
+      outroStartTime: cfg.outro ? cfg.outro * 1000 : undefined,
+    };
+    // 设了时长就顺手打开总开关
+    if ((patch.intro || patch.outro) && !skipEnabled) {
+      next.skipEnabled = true;
+      saveSkipEnabled(true);
     }
+    set(next);
+    saveSkipConfig(detail.title, cfg);
+  },
+
+  toggleSkipEnabled: () => {
+    const next = !get().skipEnabled;
+    const { introEndTime, outroStartTime } = get();
+    set({ skipEnabled: next, _outroHandled: false });
+    saveSkipEnabled(next);
+    Toast.show({
+      type: "info",
+      text1: next ? "已开启自动跳过片头片尾" : "已关闭自动跳过片头片尾",
+      text2: next && !introEndTime && !outroStartTime ? "播到正片开始 / 片尾开始时，按旁边的片头、片尾按钮记录" : undefined,
+    });
   },
 
   _savePlayRecord: (updates = {}, options = {}) => {
@@ -392,25 +434,37 @@ const usePlayerStore = create<PlayerState>((set, get) => ({
       return;
     }
 
-    const { currentEpisodeIndex, episodes, outroStartTime, playEpisode } = get();
+    const { currentEpisodeIndex, episodes, outroStartTime, playEpisode, skipEnabled, _outroHandled } = get();
     const detail = useDetailStore.getState().detail;
 
+    // 自动跳过片尾：有下一集直接切，最后一集暂停；每集只触发一次
     if (
-      outroStartTime &&
-      newStatus.durationMillis &&
-      newStatus.positionMillis >= newStatus.durationMillis - outroStartTime
+      skipEnabled &&
+      !_outroHandled &&
+      newStatus.isPlaying &&
+      inOutro(
+        { intro: 0, outro: Math.round((outroStartTime || 0) / 1000) },
+        newStatus.positionMillis / 1000,
+        (newStatus.durationMillis || 0) / 1000
+      )
     ) {
+      set({ _outroHandled: true });
       if (currentEpisodeIndex < episodes.length - 1) {
+        Toast.show({ type: "info", text1: "已跳过片尾，播放下一集" });
         playEpisode(currentEpisodeIndex + 1);
-        return; // Stop further processing for this update
+      } else {
+        get()._savePlayRecord({}, { immediate: true });
+        get().videoRef?.current?.pauseAsync();
+        Toast.show({ type: "info", text1: "已跳过片尾" });
       }
+      return;
     }
 
     if (detail && newStatus.durationMillis) {
       get()._savePlayRecord();
 
       const isNearEnd = newStatus.positionMillis / newStatus.durationMillis > 0.95;
-      if (isNearEnd && currentEpisodeIndex < episodes.length - 1 && !outroStartTime) {
+      if (isNearEnd && currentEpisodeIndex < episodes.length - 1 && !(skipEnabled && outroStartTime)) {
         set({ showNextEpisodeOverlay: true });
       } else {
         set({ showNextEpisodeOverlay: false });
@@ -466,6 +520,7 @@ const usePlayerStore = create<PlayerState>((set, get) => ({
       playbackRate: 1.0,
       introEndTime: undefined,
       outroStartTime: undefined,
+      _outroHandled: false,
     });
   },
 

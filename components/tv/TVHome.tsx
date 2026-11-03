@@ -26,6 +26,15 @@ import { getApiConfigErrorMessage, useApiConfig } from "@/hooks/useApiConfig";
 import VideoCard from "@/components/VideoCard";
 import { StyledButton } from "@/components/StyledButton";
 import { Colors } from "@/constants/Colors";
+import {
+  appendUnique,
+  chunk,
+  DiscoverKind,
+  FEED_SHELVES,
+  FeedShelfDef,
+  isNearBottom,
+  nextDiscoverKind,
+} from "@/utils/homeFeed";
 
 /** 首页片架（豆瓣分类），顺序即显示顺序 */
 const SHELVES: { key: string; title: string; type: "movie" | "tv"; tag: string }[] = [
@@ -43,6 +52,10 @@ const SHELVES: { key: string; title: string; type: "movie" | "tv"; tag: string }
 const HERO_INTERVAL = 8000;
 
 const GUTTER = 48;
+/** 电视端卡片占位宽度（VideoCard.tv：160 + 左右 10） */
+const CARD_SLOT = 180;
+const GRID_PAGE = 24;
+const itemKey = (i: HomeItem) => i.doubanId || i.title || "";
 
 type HomeItem = RowItem & { doubanId?: string; kind?: "movie" | "tv" };
 
@@ -135,6 +148,7 @@ function HeroPoster({ slide, width, height }: { slide: Slide; width: number; hei
  *  - 顶部导航：首页 / 分类 / 收藏，右侧搜索、设置、退出
  *  - 大图轮播：豆瓣横版剧照铺满，8 秒自动切换
  *  - 横向片架：继续观看 + 豆瓣各分类
+ *  - 无限下拉：接近底部时逐排追加主题片架，之后是无尽的「发现更多」海报网格
  */
 export default function TVHome() {
   const router = useRouter();
@@ -160,8 +174,40 @@ export default function TVHome() {
 
   const ready = apiConfigStatus.isConfigured && !apiConfigStatus.needsConfiguration;
 
+  // ---------- 无限下拉 ----------
+  const [feed, setFeed] = useState<{ def: FeedShelfDef; items: HomeItem[] | null }[]>([]);
+  const [discover, setDiscover] = useState<HomeItem[]>([]);
+  const [feedBusy, setFeedBusy] = useState(false);
+  const [feedFailed, setFeedFailed] = useState(false);
+  const [feedFinished, setFeedFinished] = useState(false);
+  const [nearBottom, setNearBottom] = useState(false);
+  const [feedTick, setFeedTick] = useState(0);
+  const feedLock = useRef(false);
+  const feedGen = useRef(0); // 每次重新加载首页递增，丢弃过期请求
+  const nextShelf = useRef(0);
+  const discoverRef = useRef<HomeItem[]>([]);
+  const discoverState = useRef({
+    last: null as DiscoverKind | null,
+    start: { movie: 0, tv: 0 } as Record<DiscoverKind, number>,
+    done: { movie: false, tv: false } as Record<DiscoverKind, boolean>,
+  });
+
+  const resetFeed = useCallback(() => {
+    feedGen.current++;
+    feedLock.current = false;
+    nextShelf.current = 0;
+    discoverRef.current = [];
+    discoverState.current = { last: null, start: { movie: 0, tv: 0 }, done: { movie: false, tv: false } };
+    setFeed([]);
+    setDiscover([]);
+    setFeedBusy(false);
+    setFeedFailed(false);
+    setFeedFinished(false);
+  }, []);
+
   // ---------- 数据 ----------
   const loadShelves = useCallback(async () => {
+    resetFeed();
     setLoading(true);
     setError(null);
     await useAuthStore.getState().checkLoginStatus(useSettingsStore.getState().apiBaseUrl);
@@ -188,7 +234,7 @@ export default function TVHome() {
       );
     }
     setLoading(false);
-  }, []);
+  }, [resetFeed]);
 
   const loadRecords = useCallback(async () => {
     if (!useAuthStore.getState().isLoggedIn) {
@@ -231,6 +277,83 @@ export default function TVHome() {
       // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [ready, isLoggedIn, loadRecords])
   );
+
+  const feedEnabled = ready && !loading && Object.keys(shelves).length > 0;
+
+  /** 追加下一块：先逐排加主题片架，用完后翻「发现更多」 */
+  const loadMore = useCallback(async (): Promise<"ok" | "error" | "end"> => {
+    const gen = feedGen.current;
+    if (nextShelf.current < FEED_SHELVES.length) {
+      const def = FEED_SHELVES[nextShelf.current++];
+      setFeed((prev) => [...prev, { def, items: null }]);
+      let items: HomeItem[] = [];
+      try {
+        const res = await api.getDoubanCategories({ kind: def.kind, category: def.category, type: def.type, limit: 20 });
+        items = toHomeItems((res?.list || []).filter((i) => i.poster), def.kind);
+      } catch {
+        items = []; // 单排失败直接隐藏，不影响后面
+      }
+      if (gen !== feedGen.current) return "ok";
+      setFeed((prev) => prev.map((f) => (f.def.key === def.key ? { def, items } : f)));
+      return "ok";
+    }
+    const st = discoverState.current;
+    const kind = nextDiscoverKind(st.last, st.done);
+    if (!kind) return "end";
+    try {
+      const res = await api.getDoubanRecommends({
+        type: kind,
+        genre: "all",
+        region: "all",
+        year: "all",
+        platform: "all",
+        sort: "T",
+        limit: GRID_PAGE,
+        start: st.start[kind],
+      });
+      if (gen !== feedGen.current) return "ok";
+      const list = res?.list || [];
+      st.last = kind;
+      st.start[kind] += GRID_PAGE;
+      // 筛选接口会滤掉片单 / 广告，单页可能不足一页，以返回为空判断到底
+      if (list.length === 0) st.done[kind] = true;
+      const { list: merged, added } = appendUnique(
+        discoverRef.current,
+        toHomeItems(list.filter((i) => i.poster), kind),
+        itemKey
+      );
+      if (added === 0 && list.length > 0 && st.start[kind] > 400) st.done[kind] = true;
+      if (added > 0) {
+        discoverRef.current = merged;
+        setDiscover(merged);
+      }
+      return nextDiscoverKind(st.last, st.done) ? "ok" : "end";
+    } catch {
+      return "error";
+    }
+  }, []);
+
+  // 接近底部且空闲时加载；加载完 tick+1 再检查一次（内容不够撑满时继续加载，被挤出范围后停下）
+  useEffect(() => {
+    if (!feedEnabled || !nearBottom || feedFailed || feedFinished || feedLock.current) return;
+    feedLock.current = true;
+    setFeedBusy(true);
+    const gen = feedGen.current;
+    loadMore().then((r) => {
+      if (gen !== feedGen.current) return;
+      feedLock.current = false;
+      setFeedBusy(false);
+      if (r === "error") setFeedFailed(true);
+      else if (r === "end") setFeedFinished(true);
+      else setFeedTick((t) => t + 1);
+    });
+  }, [feedEnabled, nearBottom, feedFailed, feedFinished, feedTick, loadMore]);
+
+  const scrollMetrics = useRef({ y: 0, h: 0, content: 0 });
+  const checkNearBottom = useCallback(() => {
+    const m = scrollMetrics.current;
+    setNearBottom(isNearBottom(m.y, m.h, m.content, height * 1.5));
+  }, [height]);
 
   // ---------- 大图 ----------
   const slides = useMemo<Slide[]>(() => {
@@ -373,14 +496,39 @@ export default function TVHome() {
   const shelfList: { key: string; title: string; items: HomeItem[] }[] = [
     ...(records.length ? [{ key: "records", title: "继续观看", items: records }] : []),
     ...SHELVES.map((s) => ({ key: s.key, title: s.title, items: shelves[s.key] || [] })).filter((s) => s.items.length),
+    // 无限下拉追加的片架（取不到数据的直接隐藏）
+    ...feed
+      .filter((f) => f.items && f.items.length)
+      .map((f) => ({ key: f.def.key, title: f.def.title, items: f.items as HomeItem[] })),
   ];
+  const loadingFeedShelf = feed.find((f) => f.items === null);
+  const gridCols = Math.max(1, Math.floor((width - 2 * (GUTTER - 18)) / CARD_SLOT));
+  const discoverRows = chunk(discover, gridCols);
 
   const heroH = height - NAV_H;
 
   return (
     <View style={styles.screen}>
       {nav}
-      <ScrollView ref={scrollRef} showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 48 }}>
+      <ScrollView
+        ref={scrollRef}
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={{ paddingBottom: 48 }}
+        scrollEventThrottle={200}
+        onScroll={(e) => {
+          const { contentOffset, layoutMeasurement, contentSize } = e.nativeEvent;
+          scrollMetrics.current = { y: contentOffset.y, h: layoutMeasurement.height, content: contentSize.height };
+          checkNearBottom();
+        }}
+        onLayout={(e) => {
+          scrollMetrics.current.h = e.nativeEvent.layout.height;
+          checkNearBottom();
+        }}
+        onContentSizeChange={(_, h) => {
+          scrollMetrics.current.content = h;
+          checkNearBottom();
+        }}
+      >
         {/* 全屏大图 */}
         <View style={{ width, height: heroH }}>
           {slide && (
@@ -485,6 +633,54 @@ export default function TVHome() {
             />
           </View>
         ))}
+
+        {/* 正在加载的下一排片架 */}
+        {loadingFeedShelf && (
+          <View style={styles.shelf}>
+            <Text style={styles.shelfTitle}>{loadingFeedShelf.def.title}</Text>
+            <View style={styles.feedLoading}>
+              <ActivityIndicator color="#fff" />
+            </View>
+          </View>
+        )}
+
+        {/* 发现更多：海报网格，每行是 ScrollView 的直接子元素，方便聚焦时滚动到该行 */}
+        {discoverRows.length > 0 && <Text style={[styles.shelfTitle, styles.discoverTitle]}>发现更多</Text>}
+        {discoverRows.map((row, r) => (
+          <View
+            key={`discover-${r}`}
+            style={styles.gridRow}
+            onLayout={(e) => {
+              shelfY.current[`discover-${r}`] = e.nativeEvent.layout.y;
+            }}
+          >
+            {row.map((item) => (
+              <VideoCard
+                key={`d-${item.kind}-${itemKey(item)}`}
+                id={item.id}
+                source={item.source}
+                title={item.title}
+                poster={item.poster}
+                year={item.year}
+                rate={item.rate}
+                api={api}
+                onFocus={() => scrollToShelf(`discover-${r}`)}
+              />
+            ))}
+          </View>
+        ))}
+
+        {feedEnabled && (
+          <View style={styles.feedFooter}>
+            {feedFailed ? (
+              <StyledButton text="加载失败，重试" variant="ghost" onPress={() => setFeedFailed(false)} />
+            ) : feedFinished ? (
+              <Text style={styles.feedEnd}>已经到底了</Text>
+            ) : feedBusy && !loadingFeedShelf ? (
+              <ActivityIndicator color="#fff" />
+            ) : null}
+          </View>
+        )}
       </ScrollView>
     </View>
   );
@@ -596,6 +792,27 @@ const styles = StyleSheet.create({
     letterSpacing: -0.2,
     paddingHorizontal: GUTTER,
     marginBottom: 2,
+  },
+  feedLoading: {
+    height: 120,
+    justifyContent: "center",
+    paddingHorizontal: GUTTER,
+    alignItems: "flex-start",
+  },
+  discoverTitle: {
+    marginTop: 16,
+  },
+  gridRow: {
+    flexDirection: "row",
+    paddingHorizontal: GUTTER - 18,
+  },
+  feedFooter: {
+    paddingVertical: 24,
+    alignItems: "center",
+  },
+  feedEnd: {
+    color: Colors.dark.secondaryText,
+    fontSize: 14,
   },
   messageTitle: {
     color: "#FFFFFF",

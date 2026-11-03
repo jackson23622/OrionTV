@@ -2,11 +2,13 @@ import { useCallback, RefObject, useMemo } from 'react';
 import { Video, ResizeMode } from 'expo-av';
 import Toast from 'react-native-toast-message';
 import usePlayerStore from '@/stores/playerStore';
+import { introSkipTarget } from '@/utils/skipSegments';
 
 interface UseVideoHandlersProps {
   videoRef: RefObject<Video>;
   currentEpisode: { url: string; title: string } | undefined;
   initialPosition: number;
+  /** 已不再使用：片头时间与开关在 onLoad 时直接从 playerStore 读取 */
   introEndTime?: number;
   playbackRate: number;
   handlePlaybackStatusUpdate: (status: any) => void;
@@ -18,19 +20,30 @@ export const useVideoHandlers = ({
   videoRef,
   currentEpisode,
   initialPosition,
-  introEndTime,
   playbackRate,
   handlePlaybackStatusUpdate,
   deviceType,
   detail,
 }: UseVideoHandlersProps) => {
   
-  const onLoad = useCallback(async () => {
+  const onLoad = useCallback(async (loadStatus?: any) => {
     console.info(`[PERF] Video onLoad - video ready to play`);
     
     try {
-      // 1. 先设置位置（如果需要）
-      const jumpPosition = initialPosition || introEndTime || 0;
+      // 1. 先设置位置（如果需要）：恢复进度；开启了跳过片头且还没过片头时跳到片头结束
+      let jumpPosition = initialPosition || 0;
+      const { skipEnabled, introEndTime } = usePlayerStore.getState();
+      if (skipEnabled && introEndTime) {
+        const to = introSkipTarget(
+          { intro: Math.round(introEndTime / 1000), outro: 0 },
+          jumpPosition / 1000,
+          (loadStatus?.durationMillis || 0) / 1000
+        );
+        if (to !== null) {
+          jumpPosition = to * 1000;
+          Toast.show({ type: "info", text1: "已跳过片头" });
+        }
+      }
       if (jumpPosition > 0) {
         console.info(`[PERF] Setting initial position to ${jumpPosition}ms`);
         await videoRef.current?.setPositionAsync(jumpPosition);
@@ -49,7 +62,7 @@ export const useVideoHandlers = ({
       usePlayerStore.setState({ isLoading: false });
       // 不显示错误提示，因为自动播放失败是常见且预期的情况
     }
-  }, [videoRef, initialPosition, introEndTime]);
+  }, [videoRef, initialPosition]);
 
   const onLoadStart = useCallback(() => {
     if (!currentEpisode?.url) return;
