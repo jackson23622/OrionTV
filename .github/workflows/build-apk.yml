@@ -65,9 +65,9 @@ jobs:
           tag_name: v${{ steps.package-version.outputs.version }}
           name: MoonTV v${{ steps.package-version.outputs.version }}
           body: |
-            MoonTV 电视端（Apple TV 风格界面），基于 OrionTV。
+            MoonTV 客户端，基于 OrionTV。同一个安装包通用：安卓电视（遥控器界面）、安卓手机、平板、折叠屏（触屏界面，折叠 / 展开自动适配）。
             本次构建：${{ github.sha }}
-            安装：下载 MoonTV.${{ steps.package-version.outputs.version }}.apk 拷到电视或用电视浏览器下载后安装。
+            安装：下载 MoonTV.${{ steps.package-version.outputs.version }}.apk，手机直接安装；电视拷过去或用电视浏览器下载后安装。
           draft: false
           prerelease: false
           overwrite_files: true

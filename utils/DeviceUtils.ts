@@ -1,18 +1,27 @@
 import { Platform, Dimensions } from "react-native";
-import { DeviceType } from "@/hooks/useResponsiveLayout";
+import type { DeviceType } from "@/hooks/useResponsiveLayout";
+
+/**
+ * 设备类型判定：
+ * - 安卓 / iOS 上只有真正的电视（Platform.isTV）才用遥控器界面；
+ *   平板、折叠屏展开后宽度再大也是触屏设备，按宽度分为 tablet / mobile。
+ * - 网页端没有 isTV，仍按宽度：>= 1024 视为大屏（tv 布局）。
+ * 折叠屏折叠 / 展开时窗口宽度变化，useResponsiveLayout 会随 Dimensions 变化重新判定。
+ */
+export function classifyDevice(width: number, isTV: boolean, os: string): DeviceType {
+  if (isTV) return "tv";
+  if (os === "web" && width >= 1024) return "tv";
+  if (width >= 768) return "tablet";
+  return "mobile";
+}
 
 export const DeviceUtils = {
   /**
    * 检测当前设备类型
    */
   getDeviceType(): DeviceType {
-    // if (Platform.isTV) return "tv";
-
     const { width } = Dimensions.get("window");
-
-    if (width >= 1024) return "tv";
-    if (width >= 768) return "tablet";
-    return "mobile";
+    return classifyDevice(width, !!Platform.isTV, Platform.OS);
   },
 
   /**

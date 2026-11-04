@@ -1,11 +1,33 @@
 import { Dimensions } from "react-native";
-import { DeviceUtils } from "../DeviceUtils";
+import { classifyDevice, DeviceUtils } from "../DeviceUtils";
 
+// 模拟网页端（没有 isTV，按宽度判定）；安卓 / 折叠屏的判定见 classifyDevice 用例
 jest.mock("react-native", () => ({
   Dimensions: {
     get: jest.fn(),
   },
+  Platform: { OS: "web", isTV: false },
 }));
+
+describe("classifyDevice", () => {
+  it("安卓电视始终为 tv", () => {
+    expect(classifyDevice(960, true, "android")).toBe("tv");
+  });
+
+  it("安卓平板 / 折叠屏展开后宽屏也不当成电视", () => {
+    expect(classifyDevice(1280, false, "android")).toBe("tablet"); // 平板横屏
+    expect(classifyDevice(841, false, "android")).toBe("tablet"); // 折叠屏展开
+  });
+
+  it("安卓手机 / 折叠屏外屏为 mobile", () => {
+    expect(classifyDevice(412, false, "android")).toBe("mobile");
+    expect(classifyDevice(344, false, "android")).toBe("mobile");
+  });
+
+  it("网页端宽屏仍为 tv 布局", () => {
+    expect(classifyDevice(1440, false, "web")).toBe("tv");
+  });
+});
 
 const mockedDimensions = Dimensions as jest.Mocked<typeof Dimensions>;
 

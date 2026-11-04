@@ -5,6 +5,7 @@ import { Video } from "expo-av";
 import { useKeepAwake } from "expo-keep-awake";
 import { ThemedView } from "@/components/ThemedView";
 import { PlayerControls } from "@/components/PlayerControls";
+import { MobilePlayerMenu } from "@/components/MobilePlayerMenu";
 import { EpisodeSelectionModal } from "@/components/EpisodeSelectionModal";
 import { SourceSelectionModal } from "@/components/SourceSelectionModal";
 import { SpeedSelectionModal } from "@/components/SpeedSelectionModal";
@@ -243,6 +244,9 @@ export default function PlayScreen() {
 
         {/* <NextEpisodeOverlay visible={showNextEpisodeOverlay} onCancel={() => setShowNextEpisodeOverlay(false)} /> */}
       </TouchableOpacity>
+
+      {/* 手机 / 平板 / 折叠屏：原生控制条之外的跳过片头片尾、选集、换源、倍速 */}
+      {deviceType !== "tv" && !!currentEpisode?.url && <MobilePlayerMenu />}
 
       <EpisodeSelectionModal />
       <SourceSelectionModal />

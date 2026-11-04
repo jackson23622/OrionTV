@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { Dimensions, Platform } from "react-native";
+import { classifyDevice } from "@/utils/DeviceUtils";
 
 export type DeviceType = "mobile" | "tablet" | "tv";
 
@@ -14,19 +15,7 @@ export interface ResponsiveConfig {
   screenHeight: number;
 }
 
-const BREAKPOINTS = {
-  mobile: { min: 0, max: 767 },
-  tablet: { min: 768, max: 1023 },
-  tv: { min: 1024, max: Infinity },
-};
-
-const getDeviceType = (width: number): DeviceType => {
-  if (Platform.isTV) return "tv";
-
-  if (width >= BREAKPOINTS.tv.min) return "tv";
-  if (width >= BREAKPOINTS.tablet.min) return "tablet";
-  return "mobile";
-};
+const getDeviceType = (width: number): DeviceType => classifyDevice(width, !!Platform.isTV, Platform.OS);
 
 const getLayoutConfig = (
   deviceType: DeviceType,
